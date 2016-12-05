@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -13,17 +14,27 @@ type TokenBucket struct {
 	m        *sync.Mutex
 	cap      int64
 	avail    int64
+	ticker   *time.Ticker
 }
 
 // NewTokenBucket returns a new token bucket with specified fill interval and
 // capability.
 func NewTokenBucket(interval time.Duration, cap int64) *TokenBucket {
+	if interval < 0 {
+		panic(fmt.Sprintf("ratelimit: interval %v should > 0", interval))
+	}
+
+	if cap < 0 {
+		panic(fmt.Sprintf("ratelimit: capability %v should > 0", cap))
+	}
+
 	tb := &TokenBucket{
 		start:    time.Now(),
 		interval: interval,
 		m:        &sync.Mutex{},
 		cap:      cap,
 		avail:    cap,
+		ticker:   time.NewTicker(interval),
 	}
 
 	go tb.adjustDaemon()
@@ -51,10 +62,13 @@ func (tb *TokenBucket) Take(count int64) bool {
 	return false
 }
 
-func (tb *TokenBucket) adjustDaemon() {
-	tick := time.Tick(tb.interval)
+// Destory destorys the token bucket and stop the inner channels.
+func (tb *TokenBucket) Destory() {
+	tb.ticker.Stop()
+}
 
-	for now := range tick {
+func (tb *TokenBucket) adjustDaemon() {
+	for now := range tb.ticker.C {
 		var _ = now
 
 		tb.m.Lock()
