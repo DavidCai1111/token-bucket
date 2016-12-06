@@ -27,9 +27,9 @@ type waitingJob struct {
 	abandoned bool
 }
 
-// NewTokenBucket returns a new token bucket with specified fill interval and
+// New returns a new token bucket with specified fill interval and
 // capability. The bucket is initially full.
-func NewTokenBucket(interval time.Duration, cap int64) *TokenBucket {
+func New(interval time.Duration, cap int64) *TokenBucket {
 	if interval < 0 {
 		panic(fmt.Sprintf("ratelimit: interval %v should > 0", interval))
 	}
@@ -79,17 +79,7 @@ func (tb *TokenBucket) TryTake(count int64) bool {
 // not enough tokens in the bucket, it will keep waiting until count tokens are
 // availible and then take them.
 func (tb *TokenBucket) Take(count int64) {
-	tb.checkCount(count)
-
-	w := &waitingJob{
-		ch:   make(chan struct{}),
-		use:  count,
-		need: count,
-	}
-
-	tb.addWaitingJob(w)
-
-	<-w.ch
+	tb.waitAndTake(count, count)
 }
 
 // TakeMaxDuration tasks specified count tokens from the bucket, if there are
@@ -97,50 +87,46 @@ func (tb *TokenBucket) Take(count int64) {
 // availible and then take them or just return false when reach the given max
 // duration.
 func (tb *TokenBucket) TakeMaxDuration(count int64, max time.Duration) bool {
-	tb.checkCount(count)
-
-	w := &waitingJob{
-		ch:   make(chan struct{}),
-		use:  count,
-		need: count,
-	}
-
-	tb.addWaitingJob(w)
-
-	select {
-	case <-w.ch:
-		return true
-	case <-time.After(max):
-		w.abandoned = true
-		return false
-	}
+	return tb.waitAndTakeMaxDuration(count, count, max)
 }
 
 // Wait will keep waiting until count tokens are availible in the bucket.
 func (tb *TokenBucket) Wait(count int64) {
-	tb.checkCount(count)
+	tb.waitAndTake(count, 0)
+}
+
+// WaitMaxDuration will keep waiting until count tokens are availible in the
+// bucket or just return false when reach the given max duration.
+func (tb *TokenBucket) WaitMaxDuration(count int64, max time.Duration) bool {
+	return tb.waitAndTakeMaxDuration(count, 0, max)
+}
+
+func (tb *TokenBucket) waitAndTake(need int64, use int64) {
+	tb.checkCount(use)
 
 	w := &waitingJob{
 		ch:   make(chan struct{}),
-		use:  0,
-		need: count,
+		use:  use,
+		need: need,
 	}
+
+	defer close(w.ch)
 
 	tb.addWaitingJob(w)
 
 	<-w.ch
 }
 
-// WaitMaxDuration will keep waiting until count tokens are availible in the
-// bucket or just return false when reach the given max duration.
-func (tb *TokenBucket) WaitMaxDuration(count int64, max time.Duration) bool {
-	tb.checkCount(count)
+func (tb *TokenBucket) waitAndTakeMaxDuration(need int64, use int64, max time.Duration) bool {
+	tb.checkCount(use)
 
 	w := &waitingJob{
 		ch:   make(chan struct{}),
-		use:  0,
-		need: count,
+		use:  use,
+		need: need,
 	}
+
+	defer close(w.ch)
 
 	tb.addWaitingJob(w)
 
@@ -200,8 +186,8 @@ func (tb *TokenBucket) adjustDaemon() {
 }
 
 func (tb *TokenBucket) checkCount(count int64) {
-	if count > tb.cap {
+	if count < 0 || count > tb.cap {
 		panic(fmt.Sprintf("token-bucket: count %v should be less than bucket's"+
-			"capablity %v", count, tb.cap))
+			" capablity %v", count, tb.cap))
 	}
 }
