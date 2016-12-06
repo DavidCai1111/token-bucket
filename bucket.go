@@ -10,7 +10,6 @@ import (
 // TokenBucket is a token bucket (https://en.wikipedia.org/wiki/Token_bucket)
 // that fills itself at a specified rate.
 type TokenBucket struct {
-	start             time.Time
 	interval          time.Duration
 	ticker            *time.Ticker
 	tokenMutex        *sync.Mutex
@@ -21,8 +20,9 @@ type TokenBucket struct {
 }
 
 type waitingJob struct {
-	ch    chan struct{}
-	count int64
+	ch        chan struct{}
+	count     int64
+	abandoned bool
 }
 
 // NewTokenBucket returns a new token bucket with specified fill interval and
@@ -37,7 +37,6 @@ func NewTokenBucket(interval time.Duration, cap int64) *TokenBucket {
 	}
 
 	tb := &TokenBucket{
-		start:             time.Now(),
 		interval:          interval,
 		tokenMutex:        &sync.Mutex{},
 		waitingQuqueMutex: &sync.Mutex{},
@@ -89,7 +88,21 @@ func (tb *TokenBucket) Take(count int64) {
 // TakeMaxDuration tasks specified count tokens from the bucket, if there is no
 // more availible token in the bucket, it will wait until the toekns
 // are arrived unless up to the duration.
-func (tb *TokenBucket) TakeMaxDuration(count int64) bool {
+func (tb *TokenBucket) TakeMaxDuration(count int64, max time.Duration) bool {
+	w := &waitingJob{
+		ch:    make(chan struct{}),
+		count: count,
+	}
+
+	tb.appendToWaitingQueue(w)
+
+	select {
+	case <-w.ch:
+	case <-time.After(max):
+		w.abandoned = true
+		return false
+	}
+
 	return false
 }
 
@@ -127,14 +140,14 @@ func (tb *TokenBucket) adjustDaemon() {
 		element := tb.waitingQuque.Front()
 
 		if element != nil {
-			if waitingJobNow == nil {
+			if waitingJobNow == nil || waitingJobNow.abandoned {
 				waitingJobNow = element.Value.(*waitingJob)
 
 				tb.waitingQuqueMutex.Lock()
 				tb.waitingQuque.Remove(element)
 				tb.waitingQuqueMutex.Unlock()
 
-				if tb.avail >= waitingJobNow.count {
+				if tb.avail >= waitingJobNow.count && !waitingJobNow.abandoned {
 					tb.avail -= waitingJobNow.count
 
 					waitingJobNow.ch <- struct{}{}
