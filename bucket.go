@@ -7,8 +7,9 @@ import (
 	"time"
 )
 
-// TokenBucket is a token bucket (https://en.wikipedia.org/wiki/Token_bucket)
-// that fills itself at a specified rate.
+// TokenBucket represents a token bucket
+// (https://en.wikipedia.org/wiki/Token_bucket) which based on multi goroutines,
+// and is safe to use under concurrency environments.
 type TokenBucket struct {
 	interval          time.Duration
 	ticker            *time.Ticker
@@ -21,12 +22,13 @@ type TokenBucket struct {
 
 type waitingJob struct {
 	ch        chan struct{}
-	count     int64
+	need      int64
+	use       int64
 	abandoned bool
 }
 
 // NewTokenBucket returns a new token bucket with specified fill interval and
-// capability.
+// capability. The bucket is initially full.
 func NewTokenBucket(interval time.Duration, cap int64) *TokenBucket {
 	if interval < 0 {
 		panic(fmt.Sprintf("ratelimit: interval %v should > 0", interval))
@@ -56,9 +58,11 @@ func (tb TokenBucket) Capability() int64 {
 	return tb.cap
 }
 
-// TryTake tasks specified count tokens from the bucket, the return value
-// indicates whether this attempt is successful.
+// TryTake trys to task specified count tokens from the bucket. if there are
+// not enough tokens in the bucket, it will return false.
 func (tb *TokenBucket) TryTake(count int64) bool {
+	tb.checkCount(count)
+
 	defer tb.tokenMutex.Unlock()
 	tb.tokenMutex.Lock()
 
@@ -71,47 +75,82 @@ func (tb *TokenBucket) TryTake(count int64) bool {
 	return false
 }
 
-// Take tasks specified count tokens from the bucket, if there is no
-// more availible token in the bucket, it will wait until the toekns
-// are arrived.
+// Take tasks specified count tokens from the bucket, if there are
+// not enough tokens in the bucket, it will keep waiting until count tokens are
+// availible and then take them.
 func (tb *TokenBucket) Take(count int64) {
+	tb.checkCount(count)
+
 	w := &waitingJob{
-		ch:    make(chan struct{}),
-		count: count,
+		ch:   make(chan struct{}),
+		use:  count,
+		need: count,
 	}
 
-	tb.appendToWaitingQueue(w)
+	tb.addWaitingJob(w)
 
 	<-w.ch
 }
 
-// TakeMaxDuration tasks specified count tokens from the bucket, if there is no
-// more availible token in the bucket, it will wait until the toekns
-// are arrived unless up to the duration.
+// TakeMaxDuration tasks specified count tokens from the bucket, if there are
+// not enough tokens in the bucket, it will keep waiting until count tokens are
+// availible and then take them or just return false when reach the given max
+// duration.
 func (tb *TokenBucket) TakeMaxDuration(count int64, max time.Duration) bool {
+	tb.checkCount(count)
+
 	w := &waitingJob{
-		ch:    make(chan struct{}),
-		count: count,
+		ch:   make(chan struct{}),
+		use:  count,
+		need: count,
 	}
 
-	tb.appendToWaitingQueue(w)
+	tb.addWaitingJob(w)
 
 	select {
 	case <-w.ch:
+		return true
 	case <-time.After(max):
 		w.abandoned = true
 		return false
 	}
-
-	return false
 }
 
+// Wait will keep waiting until count tokens are availible in the bucket.
 func (tb *TokenBucket) Wait(count int64) {
+	tb.checkCount(count)
 
+	w := &waitingJob{
+		ch:   make(chan struct{}),
+		use:  0,
+		need: count,
+	}
+
+	tb.addWaitingJob(w)
+
+	<-w.ch
 }
 
-func (tb *TokenBucket) WaitMaxDuration(count int64) {
+// WaitMaxDuration will keep waiting until count tokens are availible in the
+// bucket or just return false when reach the given max duration.
+func (tb *TokenBucket) WaitMaxDuration(count int64, max time.Duration) bool {
+	tb.checkCount(count)
 
+	w := &waitingJob{
+		ch:   make(chan struct{}),
+		use:  0,
+		need: count,
+	}
+
+	tb.addWaitingJob(w)
+
+	select {
+	case <-w.ch:
+		return true
+	case <-time.After(max):
+		w.abandoned = true
+		return false
+	}
 }
 
 // Destory destorys the token bucket and stop the inner channels.
@@ -119,7 +158,7 @@ func (tb *TokenBucket) Destory() {
 	tb.ticker.Stop()
 }
 
-func (tb *TokenBucket) appendToWaitingQueue(w *waitingJob) {
+func (tb *TokenBucket) addWaitingJob(w *waitingJob) {
 	tb.waitingQuqueMutex.Lock()
 	tb.waitingQuque.PushBack(w)
 	tb.waitingQuqueMutex.Unlock()
@@ -147,8 +186,8 @@ func (tb *TokenBucket) adjustDaemon() {
 				tb.waitingQuque.Remove(element)
 				tb.waitingQuqueMutex.Unlock()
 
-				if tb.avail >= waitingJobNow.count && !waitingJobNow.abandoned {
-					tb.avail -= waitingJobNow.count
+				if tb.avail >= waitingJobNow.need && !waitingJobNow.abandoned {
+					tb.avail -= waitingJobNow.use
 
 					waitingJobNow.ch <- struct{}{}
 					waitingJobNow = nil
@@ -157,5 +196,12 @@ func (tb *TokenBucket) adjustDaemon() {
 		}
 
 		tb.tokenMutex.Unlock()
+	}
+}
+
+func (tb *TokenBucket) checkCount(count int64) {
+	if count > tb.cap {
+		panic(fmt.Sprintf("token-bucket: count %v should be less than bucket's"+
+			"capablity %v", count, tb.cap))
 	}
 }
