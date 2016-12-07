@@ -175,13 +175,13 @@ func (tb *TokenBucket) adjustDaemon() {
 				waitingJobNow = element.Value.(*waitingJob)
 
 				tb.removeWaitingJob(element)
+			}
 
-				if tb.avail >= waitingJobNow.need && !waitingJobNow.abandoned {
-					waitingJobNow.ch <- struct{}{}
-					<-waitingJobNow.ch
+			if tb.avail >= waitingJobNow.need && !waitingJobNow.abandoned {
+				waitingJobNow.ch <- struct{}{}
+				<-waitingJobNow.ch
 
-					waitingJobNow = nil
-				}
+				waitingJobNow = nil
 			}
 		}
 
