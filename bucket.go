@@ -61,18 +61,7 @@ func (tb TokenBucket) Capability() int64 {
 // TryTake trys to task specified count tokens from the bucket. if there are
 // not enough tokens in the bucket, it will return false.
 func (tb *TokenBucket) TryTake(count int64) bool {
-	tb.checkCount(count)
-
-	defer tb.tokenMutex.Unlock()
-	tb.tokenMutex.Lock()
-
-	if count <= tb.avail {
-		tb.avail -= count
-
-		return true
-	}
-
-	return false
+	return tb.tryTake(count, count)
 }
 
 // Take tasks specified count tokens from the bucket, if there are
@@ -101,8 +90,25 @@ func (tb *TokenBucket) WaitMaxDuration(count int64, max time.Duration) bool {
 	return tb.waitAndTakeMaxDuration(count, 0, max)
 }
 
-func (tb *TokenBucket) waitAndTake(need int64, use int64) {
+func (tb *TokenBucket) tryTake(need, use int64) bool {
 	tb.checkCount(use)
+
+	tb.tokenMutex.Lock()
+	defer tb.tokenMutex.Unlock()
+
+	if need <= tb.avail {
+		tb.avail -= use
+
+		return true
+	}
+
+	return false
+}
+
+func (tb *TokenBucket) waitAndTake(need, use int64) {
+	if ok := tb.tryTake(need, use); ok {
+		return
+	}
 
 	w := &waitingJob{
 		ch:   make(chan struct{}),
@@ -117,8 +123,10 @@ func (tb *TokenBucket) waitAndTake(need int64, use int64) {
 	<-w.ch
 }
 
-func (tb *TokenBucket) waitAndTakeMaxDuration(need int64, use int64, max time.Duration) bool {
-	tb.checkCount(use)
+func (tb *TokenBucket) waitAndTakeMaxDuration(need, use int64, max time.Duration) bool {
+	if ok := tb.tryTake(need, use); ok {
+		return true
+	}
 
 	w := &waitingJob{
 		ch:   make(chan struct{}),
