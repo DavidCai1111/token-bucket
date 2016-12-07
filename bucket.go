@@ -116,11 +116,13 @@ func (tb *TokenBucket) waitAndTake(need, use int64) {
 		need: need,
 	}
 
-	defer close(w.ch)
-
 	tb.addWaitingJob(w)
 
 	<-w.ch
+	tb.avail -= use
+	w.ch <- struct{}{}
+
+	close(w.ch)
 }
 
 func (tb *TokenBucket) waitAndTakeMaxDuration(need, use int64, max time.Duration) bool {
@@ -140,6 +142,8 @@ func (tb *TokenBucket) waitAndTakeMaxDuration(need, use int64, max time.Duration
 
 	select {
 	case <-w.ch:
+		tb.avail -= use
+		w.ch <- struct{}{}
 		return true
 	case <-time.After(max):
 		w.abandoned = true
@@ -181,9 +185,9 @@ func (tb *TokenBucket) adjustDaemon() {
 				tb.waitingQuqueMutex.Unlock()
 
 				if tb.avail >= waitingJobNow.need && !waitingJobNow.abandoned {
-					tb.avail -= waitingJobNow.use
-
 					waitingJobNow.ch <- struct{}{}
+					<-waitingJobNow.ch
+
 					waitingJobNow = nil
 				}
 			}
