@@ -1,6 +1,6 @@
 # token-bucket
-[![Build Status](https://travis-ci.org/DavidCai1993/ratelimit.svg?branch=master)](https://travis-ci.org/DavidCai1993/ratelimit)
-[![Coverage Status](https://coveralls.io/repos/github/DavidCai1993/ratelimit/badge.svg?branch=master)](https://coveralls.io/github/DavidCai1993/ratelimit?branch=master)
+[![Build Status](https://travis-ci.org/DavidCai1993/token-bucket.svg?branch=master)](https://travis-ci.org/DavidCai1993/token-bucket)
+[![Coverage Status][![Coverage Status](https://coveralls.io/repos/github/DavidCai1993/token-bucket/badge.svg?branch=master)](https://coveralls.io/github/DavidCai1993/token-bucket?branch=master)
 
 A [token bucket](https://en.wikipedia.org/wiki/Token_bucket) implementation based on multi goroutines which is safe to use under concurrency environments.
 
