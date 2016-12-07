@@ -56,4 +56,82 @@ func TestTokenBucket(t *testing.T) {
 		assert.False(b.TryTake(1))
 		assert.Equal(int64(0), b.avail)
 	})
+
+	t.Run("Should take until count tokens availible", func(t *testing.T) {
+		start := time.Now()
+		b := New(time.Second*2, 1)
+		defer b.Destory()
+
+		assert.True(b.TryTake(1))
+		assert.False(b.TryTake(1))
+
+		b.Take(1)
+
+		assert.True(time.Now().Sub(start) > time.Second)
+	})
+
+	t.Run("Should return false when take reach max duration", func(t *testing.T) {
+		b := New(time.Second*10, 1)
+		defer b.Destory()
+
+		assert.True(b.TryTake(1))
+		assert.False(b.TakeMaxDuration(1, time.Second*2))
+	})
+
+	t.Run("Should return true when get availible tokens before max duration", func(t *testing.T) {
+		start := time.Now()
+		b := New(time.Second*2, 1)
+		defer b.Destory()
+
+		assert.True(b.TryTake(1))
+		assert.True(b.TakeMaxDuration(1, time.Second*3))
+		assert.True(time.Now().Sub(start) < time.Second*3)
+		assert.True(time.Now().Sub(start) > time.Second*2)
+		assert.Equal(int64(0), b.avail)
+	})
+
+	t.Run("Should return immediately when have count tokens available using waitAndTake", func(t *testing.T) {
+		start := time.Now()
+		b := New(time.Second*2, 1)
+		defer b.Destory()
+
+		b.waitAndTake(1, 1)
+
+		assert.True(time.Now().Sub(start) < time.Second)
+		assert.Equal(int64(0), b.avail)
+	})
+
+	t.Run("Should return immediately when have count tokens available using waitAndTakeMaxDuration", func(t *testing.T) {
+		start := time.Now()
+		b := New(time.Second*2, 1)
+		defer b.Destory()
+
+		b.waitAndTakeMaxDuration(1, 0, time.Second*3)
+
+		assert.True(time.Now().Sub(start) < time.Second)
+		assert.Equal(int64(1), b.avail)
+	})
+
+	t.Run("Should wait until count tokens available", func(t *testing.T) {
+		start := time.Now()
+		b := New(time.Second*2, 1)
+		defer b.Destory()
+
+		assert.True(b.TryTake(1))
+		assert.False(b.TryTake(1))
+
+		b.Wait(1)
+
+		assert.True(time.Now().Sub(start) > time.Second)
+		assert.Equal(int64(1), b.avail)
+	})
+
+	t.Run("Should return false when wait reach max duration", func(t *testing.T) {
+		b := New(time.Second*10, 1)
+		defer b.Destory()
+
+		assert.True(b.TryTake(1))
+		assert.False(b.WaitMaxDuration(1, time.Second*2))
+		assert.Equal(int64(0), b.avail)
+	})
 }

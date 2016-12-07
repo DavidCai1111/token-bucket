@@ -156,12 +156,6 @@ func (tb *TokenBucket) Destory() {
 	tb.ticker.Stop()
 }
 
-func (tb *TokenBucket) addWaitingJob(w *waitingJob) {
-	tb.waitingQuqueMutex.Lock()
-	tb.waitingQuque.PushBack(w)
-	tb.waitingQuqueMutex.Unlock()
-}
-
 func (tb *TokenBucket) adjustDaemon() {
 	var waitingJobNow *waitingJob
 
@@ -174,15 +168,13 @@ func (tb *TokenBucket) adjustDaemon() {
 			tb.avail++
 		}
 
-		element := tb.waitingQuque.Front()
+		element := tb.getFrontWaitingJob()
 
 		if element != nil {
 			if waitingJobNow == nil || waitingJobNow.abandoned {
 				waitingJobNow = element.Value.(*waitingJob)
 
-				tb.waitingQuqueMutex.Lock()
-				tb.waitingQuque.Remove(element)
-				tb.waitingQuqueMutex.Unlock()
+				tb.removeWaitingJob(element)
 
 				if tb.avail >= waitingJobNow.need && !waitingJobNow.abandoned {
 					waitingJobNow.ch <- struct{}{}
@@ -195,6 +187,26 @@ func (tb *TokenBucket) adjustDaemon() {
 
 		tb.tokenMutex.Unlock()
 	}
+}
+
+func (tb *TokenBucket) addWaitingJob(w *waitingJob) {
+	tb.waitingQuqueMutex.Lock()
+	tb.waitingQuque.PushBack(w)
+	tb.waitingQuqueMutex.Unlock()
+}
+
+func (tb *TokenBucket) getFrontWaitingJob() *list.Element {
+	tb.waitingQuqueMutex.Lock()
+	e := tb.waitingQuque.Front()
+	tb.waitingQuqueMutex.Unlock()
+
+	return e
+}
+
+func (tb *TokenBucket) removeWaitingJob(e *list.Element) {
+	tb.waitingQuqueMutex.Lock()
+	tb.waitingQuque.Remove(e)
+	tb.waitingQuqueMutex.Unlock()
 }
 
 func (tb *TokenBucket) checkCount(count int64) {

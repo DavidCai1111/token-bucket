@@ -13,3 +13,28 @@ go get -u github.com/DavidCai1993/token-bucket
 ## Documentation
 
 API documentation can be found here: https://godoc.org/github.com/DavidCai1993/token-bucket
+
+## Usage
+
+```go
+import (
+  bucket "github.com/DavidCai1993/token-bucket"
+)
+```
+
+```go
+tb := bucket.New(time.Second, 1000)
+
+tb.Take(10)
+ok := tb.TakeMaxDuration(1000, 20*time.Second)
+
+fmt.Println(ok)
+// -> true
+
+tb.WaitMaxDuration(1000, 10*time.Second)
+
+fmt.Println(ok)
+// -> false
+
+tb.Wait(1000)
+```
