@@ -58,6 +58,14 @@ func (tb TokenBucket) Capability() int64 {
 	return tb.cap
 }
 
+// Availible returns how many tokens are availible in the bucket.
+func (tb TokenBucket) Availible() int64 {
+	tb.tokenMutex.Lock()
+	defer tb.tokenMutex.Unlock()
+
+	return tb.avail
+}
+
 // TryTake trys to task specified count tokens from the bucket. if there are
 // not enough tokens in the bucket, it will return false.
 func (tb *TokenBucket) TryTake(count int64) bool {

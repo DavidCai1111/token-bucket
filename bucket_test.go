@@ -17,7 +17,7 @@ func TestTokenBucket(t *testing.T) {
 		defer b.Destory()
 
 		assert.Equal(cap, b.Capability())
-		assert.Equal(cap, b.avail)
+		assert.Equal(cap, b.Availible())
 	})
 
 	t.Run("Should panic when interval and cap is negative", func(t *testing.T) {
