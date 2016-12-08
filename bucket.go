@@ -54,12 +54,12 @@ func New(interval time.Duration, cap int64) *TokenBucket {
 }
 
 // Capability returns the capability of this token bucket.
-func (tb TokenBucket) Capability() int64 {
+func (tb *TokenBucket) Capability() int64 {
 	return tb.cap
 }
 
 // Availible returns how many tokens are availible in the bucket.
-func (tb TokenBucket) Availible() int64 {
+func (tb *TokenBucket) Availible() int64 {
 	tb.tokenMutex.Lock()
 	defer tb.tokenMutex.Unlock()
 
