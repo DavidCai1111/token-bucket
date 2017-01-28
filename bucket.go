@@ -167,9 +167,7 @@ func (tb *TokenBucket) Destory() {
 func (tb *TokenBucket) adjustDaemon() {
 	var waitingJobNow *waitingJob
 
-	for now := range tb.ticker.C {
-		var _ = now
-
+	for range tb.ticker.C {
 		tb.tokenMutex.Lock()
 
 		if tb.avail < tb.cap {
